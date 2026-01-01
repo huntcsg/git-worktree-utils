@@ -15,7 +15,7 @@ Shell utilities for managing git worktrees using the **bare repo + worktree patt
 ### Homebrew (recommended)
 
 ```bash
-brew tap huntcsg/git-worktree-utils
+brew tap huntcsg/git-worktree-utils https://github.com/huntcsg/git-worktree-utils
 brew install git-worktree-utils
 git-worktree-utils-setup
 ```
