@@ -80,6 +80,11 @@ complete -c wt-rebase -f
 complete -c wt-multi-new -f
 complete -c wt-multi-new -n "test (count (commandline -opc)) -ge 2" -a "(__wt_repos)"
 
+# wt-multi-add: task repos...
+complete -c wt-multi-add -f
+complete -c wt-multi-add -n "test (count (commandline -opc)) -eq 1" -a "(__wt_tasks)"
+complete -c wt-multi-add -n "test (count (commandline -opc)) -ge 2" -a "(__wt_repos)"
+
 # wt-multi-cd: task
 complete -c wt-multi-cd -f
 complete -c wt-multi-cd -n "test (count (commandline -opc)) -eq 1" -a "(__wt_tasks)"

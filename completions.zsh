@@ -100,6 +100,14 @@ _wt-multi-new() {
     esac
 }
 
+# Completion for wt-multi-add
+_wt-multi-add() {
+    case $CURRENT in
+        2) _wt_tasks ;; # task name
+        *) _wt_repos ;;
+    esac
+}
+
 # Register completions
 compdef _wt-cd wt-cd
 compdef _wt-new wt-new
@@ -108,5 +116,6 @@ compdef _wt-rm wt-rm
 compdef _wt-ls wt-ls
 compdef _wt-update wt-update
 compdef _wt-multi-new wt-multi-new
+compdef _wt-multi-add wt-multi-add
 compdef _wt_tasks wt-multi-cd
 compdef _wt_tasks wt-multi-rm

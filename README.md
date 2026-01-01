@@ -154,6 +154,7 @@ $CROSS_REPO_BASE/
 | Command | Description |
 |---------|-------------|
 | `wt-multi-new <branch> <repos...>` | Create worktrees in multiple repos with symlinks |
+| `wt-multi-add <branch> <repos...>` | Add repos to an existing cross-repo task |
 | `wt-multi-rm <branch>` | Archive a cross-repo task (removes worktrees, archives remaining files) |
 | `wt-multi-ls` | List all cross-repo tasks |
 | `wt-multi-cd <branch>` | cd into a task directory |

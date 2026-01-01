@@ -155,6 +155,22 @@ _wt_task_complete() {
     esac
 }
 
+# Completion for wt-multi-add: task then repos
+_wt_multi_add_complete() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    
+    case $COMP_CWORD in
+        1)
+            # shellcheck disable=SC2207
+            COMPREPLY=($(compgen -W "$(_wt_list_tasks)" -- "$cur"))
+            ;;
+        *)
+            # shellcheck disable=SC2207
+            COMPREPLY=($(compgen -W "$(_wt_list_repos)" -- "$cur"))
+            ;;
+    esac
+}
+
 # Register completions
 complete -F _wt_cd_complete wt-cd
 complete -F _wt_new_complete wt-new
@@ -163,5 +179,6 @@ complete -F _wt_rm_complete wt-rm
 complete -F _wt_repo_complete wt-ls
 complete -F _wt_repo_complete wt-update
 complete -F _wt_multi_complete wt-multi-new
+complete -F _wt_multi_add_complete wt-multi-add
 complete -F _wt_task_complete wt-multi-cd
 complete -F _wt_task_complete wt-multi-rm

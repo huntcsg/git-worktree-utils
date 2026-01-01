@@ -480,6 +480,58 @@ wt-multi-new() {
     cd "$task_dir" || return 1
 }
 
+# Add repos to an existing cross-repo task
+# Usage: wt-multi-add <branch-name> <repo1> <repo2> ...
+wt-multi-add() {
+    local branch="$1"
+    shift
+    local repos=("$@")
+
+    if [[ -z "$branch" || ${#repos[@]} -eq 0 ]]; then
+        echo "Usage: wt-multi-add <branch-name> <repo1> <repo2> ..."
+        echo "Example: wt-multi-add auth-fix api"
+        return 1
+    fi
+
+    local branch_dir
+    branch_dir=$(_wt_branch_to_dir "$branch")
+    local task_dir="$CROSS_REPO_BASE/$branch_dir"
+
+    if [[ ! -d "$task_dir" ]]; then
+        echo "Task '$branch' not found at $task_dir"
+        echo "Use wt-multi-new to create a new task"
+        return 1
+    fi
+
+    for repo in "${repos[@]}"; do
+        echo "Adding $repo to task..."
+
+        # Check if already in task
+        if [[ -L "$task_dir/$repo" ]]; then
+            echo "  $repo already in task"
+            continue
+        fi
+
+        # Create the worktree
+        (wt-new "$repo" "$branch" >/dev/null 2>&1) || {
+            if [[ -d "$WORKTREE_BASE/$repo/$branch_dir" ]]; then
+                echo "  Worktree already exists"
+            else
+                echo "  Failed to create worktree for $repo"
+                continue
+            fi
+        }
+
+        # Create symlink in task directory
+        ln -sf "$WORKTREE_BASE/$repo/$branch_dir" "$task_dir/$repo"
+        echo "  ✓ $repo"
+    done
+
+    echo ""
+    echo "Task directory: $task_dir"
+    ls -la "$task_dir"
+}
+
 # Remove a multi-repo task (archives instead of deleting)
 # Usage: wt-multi-rm <branch-name>
 wt-multi-rm() {
