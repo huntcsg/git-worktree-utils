@@ -1,0 +1,59 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get release info
+        id: release
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          # Remove 'v' prefix if present for URL
+          VERSION_NUM="${VERSION#v}"
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz"
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_num=$VERSION_NUM" >> $GITHUB_OUTPUT
+          echo "tarball_url=$TARBALL_URL" >> $GITHUB_OUTPUT
+
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          SHA256=$(curl -sL "${{ steps.release.outputs.tarball_url }}" | shasum -a 256 | cut -d' ' -f1)
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+
+      - name: Update formula
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          SHA256="${{ steps.sha.outputs.sha256 }}"
+          TARBALL_URL="${{ steps.release.outputs.tarball_url }}"
+          
+          # Update URL line
+          sed -i "s|url \"https://github.com/.*/archive/refs/tags/.*\.tar\.gz\"|url \"${TARBALL_URL}\"|" Formula/git-worktree-utils.rb
+          
+          # Update sha256 line
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" Formula/git-worktree-utils.rb
+          
+          echo "Updated formula to $VERSION with sha256: $SHA256"
+          cat Formula/git-worktree-utils.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/git-worktree-utils.rb
+          git commit -m "Update formula to ${{ steps.release.outputs.version }}"
+          git push
