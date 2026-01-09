@@ -52,3 +52,43 @@ jobs:
         run: |
           fish -n worktree.fish
           fish -n completions.fish
+
+  powershell-lint:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Lint PowerShell scripts
+        shell: pwsh
+        run: |
+          $results = @()
+          $results += Invoke-ScriptAnalyzer -Path worktree.ps1 -Severity Error,Warning
+          $results += Invoke-ScriptAnalyzer -Path completions.ps1 -Severity Error,Warning
+          $results += Invoke-ScriptAnalyzer -Path setup.ps1 -Severity Error,Warning
+          
+          if ($results) {
+            $results | Format-Table -AutoSize
+            exit 1
+          }
+          Write-Host "All PowerShell scripts passed linting" -ForegroundColor Green
+
+      - name: Check PowerShell syntax
+        shell: pwsh
+        run: |
+          $files = @('worktree.ps1', 'completions.ps1', 'setup.ps1')
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) {
+              Write-Host "Syntax errors in $file`:" -ForegroundColor Red
+              $errors | ForEach-Object { Write-Host "  $_" }
+              exit 1
+            }
+            Write-Host "✓ $file syntax OK" -ForegroundColor Green
+          }
