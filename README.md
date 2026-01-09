@@ -106,6 +106,37 @@ source /path/to/git-worktree-utils/worktree.fish
 source /path/to/git-worktree-utils/completions.fish
 ```
 
+#### PowerShell (Windows)
+
+Run the interactive setup:
+
+```powershell
+git clone https://github.com/huntcsg/git-worktree-utils.git
+cd git-worktree-utils
+.\setup.ps1
+```
+
+Or manually add to your `$PROFILE`:
+
+```powershell
+$env:WORKTREE_BASE = "$HOME\worktrees"
+$env:CROSS_REPO_BASE = "$HOME\cross-repo-tasks"
+$env:CROSS_REPO_ARCHIVE = "$HOME\cross-repo-tasks\wt-archive"
+
+. "C:\path\to\git-worktree-utils\worktree.ps1"
+. "C:\path\to\git-worktree-utils\completions.ps1"
+
+# Optional: Override default branch for specific repos
+Set-WtConfig -DefaultBranchOverrides @{
+    myrepo = 'master'
+    legacy = 'develop'
+}
+```
+
+The PowerShell implementation provides both idiomatic cmdlet names (e.g., `New-Worktree`, `Remove-Worktree`) and CLI-compatible aliases (e.g., `wt-new`, `wt-rm`) for cross-platform consistency.
+
+**Note:** Cross-repo symlinks (`wt-multi-*` commands) require either Developer Mode enabled or running PowerShell as Administrator.
+
 ## Directory Structure
 
 ```
