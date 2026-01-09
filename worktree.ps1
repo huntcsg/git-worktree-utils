@@ -182,10 +182,10 @@ function Copy-WorktreeFromRemote {
     
     # Extract repo name from URL if not provided
     if (-not $Name) {
-        $Name = [System.IO.Path]::GetFileNameWithoutExtension($Url) -replace '\.git$', ''
-        if ($Name -eq '') {
-            $Name = ($Url -split '/')[-1] -replace '\.git$', ''
-        }
+        # Normalize URL: remove trailing slashes and .git suffix
+        $normalizedUrl = $Url.TrimEnd('/') -replace '\.git$', ''
+        # Get last path segment as repo name
+        $Name = ($normalizedUrl -split '/')[-1]
     }
     
     $repoPath = Join-Path $env:WORKTREE_BASE $Name
