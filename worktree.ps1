@@ -926,39 +926,5 @@ Set-Alias -Name wt-multi-rm  -Value Remove-WorktreeTask
 Set-Alias -Name wt-multi-ls  -Value Get-WorktreeTask
 Set-Alias -Name wt-multi-cd  -Value Set-WorktreeTaskLocation
 
-# Export functions and aliases
-Export-ModuleMember -Function @(
-    'Get-WtConfig',
-    'Set-WtConfig',
-    'Write-WtStatus',
-    'Get-WorktreeRepo',
-    'Copy-WorktreeFromRemote',
-    'Initialize-WorktreeRepo',
-    'New-Worktree',
-    'Resume-Worktree',
-    'Remove-Worktree',
-    'Get-WorktreeList',
-    'Set-WorktreeLocation',
-    'Update-WorktreeDefault',
-    'Invoke-WorktreeRebase',
-    'New-WorktreeTask',
-    'Add-WorktreeTaskRepo',
-    'Remove-WorktreeTask',
-    'Get-WorktreeTask',
-    'Set-WorktreeTaskLocation'
-) -Alias @(
-    'wt-clone',
-    'wt-init',
-    'wt-new',
-    'wt-continue',
-    'wt-rm',
-    'wt-ls',
-    'wt-cd',
-    'wt-update',
-    'wt-rebase',
-    'wt-multi-new',
-    'wt-multi-add',
-    'wt-multi-rm',
-    'wt-multi-ls',
-    'wt-multi-cd'
-)
+# Note: Functions and aliases are automatically available when dot-sourced.
+# No Export-ModuleMember needed (only works in .psm1 module files).
