@@ -170,6 +170,23 @@ _wt_list_repos() {
     done
 }
 
+# Ensure a repo exists under WORKTREE_BASE before running commands that rely on it
+_wt_require_repo() {
+    local repo="$1"
+    local context="$2"
+    local repo_path="$WORKTREE_BASE/$repo"
+
+    if [[ ! -d "$repo_path/.bare" ]]; then
+        echo "Error: Repository '$repo' is not initialized at $repo_path"
+        echo "To fix this, clone it first: wt-clone <git-url> $repo"
+        echo "Or create a new local repo: wt-init $repo"
+        if [[ -n "$context" ]]; then
+            echo "Retry $context after the repo is available."
+        fi
+        return 1
+    fi
+}
+
 # Create a new feature worktree
 # Usage: wt-new <repo> <branch-name>
 wt-new() {
@@ -183,15 +200,15 @@ wt-new() {
     fi
 
     local repo_path="$WORKTREE_BASE/$repo"
+
+    if ! _wt_require_repo "$repo" "wt-new"; then
+        return 1
+    fi
+
     local default_branch
     default_branch=$(_wt_default_branch "$repo")
     local branch_dir
     branch_dir=$(_wt_branch_to_dir "$branch")
-
-    if [[ ! -d "$repo_path/.bare" ]]; then
-        echo "Error: Repository '$repo' not found at $repo_path"
-        return 1
-    fi
 
     cd "$repo_path" || return 1
 
@@ -220,13 +237,13 @@ wt-continue() {
     fi
 
     local repo_path="$WORKTREE_BASE/$repo"
-    local branch_dir
-    branch_dir=$(_wt_branch_to_dir "$branch")
 
-    if [[ ! -d "$repo_path/.bare" ]]; then
-        echo "Error: Repository '$repo' not found at $repo_path"
+    if ! _wt_require_repo "$repo" "wt-continue"; then
         return 1
     fi
+
+    local branch_dir
+    branch_dir=$(_wt_branch_to_dir "$branch")
 
     local default_branch
     default_branch=$(_wt_default_branch "$repo")
@@ -455,6 +472,19 @@ wt-multi-new() {
     local task_dir="$CROSS_REPO_BASE/$branch_dir"
     mkdir -p "$task_dir"
 
+    local missing_repos=()
+    for repo in "${repos[@]}"; do
+        if ! _wt_require_repo "$repo" "wt-multi-new"; then
+            missing_repos+=("$repo")
+        fi
+    done
+
+    if [[ ${#missing_repos[@]} -gt 0 ]]; then
+        echo ""
+        echo "wt-multi-new aborted. Clone the repos above before retrying."
+        return 1
+    fi
+
     for repo in "${repos[@]}"; do
         echo "Creating worktree for $repo..."
 
@@ -500,6 +530,19 @@ wt-multi-add() {
     if [[ ! -d "$task_dir" ]]; then
         echo "Task '$branch' not found at $task_dir"
         echo "Use wt-multi-new to create a new task"
+        return 1
+    fi
+
+    local missing_repos=()
+    for repo in "${repos[@]}"; do
+        if ! _wt_require_repo "$repo" "wt-multi-add"; then
+            missing_repos+=("$repo")
+        fi
+    done
+
+    if [[ ${#missing_repos[@]} -gt 0 ]]; then
+        echo ""
+        echo "wt-multi-add aborted. Clone the repos above before retrying."
         return 1
     fi
 

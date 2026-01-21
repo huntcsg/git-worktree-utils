@@ -182,6 +182,8 @@ $CROSS_REPO_BASE/
 
 ### Cross-Repo Commands
 
+Before running any `wt-multi-*` command, make sure every repo you reference has already been cloned or initialized into `$WORKTREE_BASE` (e.g., with `wt-clone <git-url>` or `wt-init <name>`). The multi commands reuse those existing bare repos and will now guide you to set them up if they are missing.
+
 | Command | Description |
 |---------|-------------|
 | `wt-multi-new <branch> <repos...>` | Create worktrees in multiple repos with symlinks |
