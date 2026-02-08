@@ -20,8 +20,11 @@ function __wt_branches
     set -l repo $argv[1]
     set -l repo_path "$WORKTREE_BASE/$repo"
     if test -d "$repo_path"
-        for dir_name in (ls -1 "$repo_path" 2>/dev/null | grep -v '^\.' | grep -v '^\.bare$')
-            __wt_dir_to_branch "$dir_name"
+        for dir in $repo_path/*/
+            set -l dir_name (basename $dir)
+            if test "$dir_name" != .bare
+                __wt_dir_to_branch "$dir_name"
+            end
         end
     end
 end
@@ -29,8 +32,8 @@ end
 # Helper: list tasks (returns branch names, not dir names)
 function __wt_tasks
     if test -d "$CROSS_REPO_BASE"
-        for dir_name in (ls -1 "$CROSS_REPO_BASE" 2>/dev/null)
-            __wt_dir_to_branch "$dir_name"
+        for dir in $CROSS_REPO_BASE/*/
+            __wt_dir_to_branch (basename $dir)
         end
     end
 end
