@@ -7,6 +7,7 @@ Shell utilities for managing git worktrees using the **bare repo + worktree patt
 - Create/remove worktrees with simple commands
 - Tab completion for repos, branches, and tasks
 - Cross-repo task management with symlinks
+- Mirror-based setup for CI/CD pods and remote agents (via git alternates)
 - Configurable default branches per repo
 - Works with any set of repositories
 
@@ -186,6 +187,7 @@ Before running any `wt-multi-*` command, make sure every repo you reference has 
 
 | Command | Description |
 |---------|-------------|
+| `wt-mirror-setup [repos...]` | Bootstrap repos from mirrors in parallel (requires `WORKTREE_MIRROR_BASE`) |
 | `wt-multi-new <branch> <repos...>` | Create worktrees in multiple repos with symlinks |
 | `wt-multi-add <branch> <repos...>` | Add repos to an existing cross-repo task |
 | `wt-multi-rm <branch>` | Archive a cross-repo task (removes worktrees, archives remaining files) |
@@ -295,6 +297,7 @@ wt-init my-new-project develop  # optional custom default branch
 | `WORKTREE_BASE` | Yes | Directory containing bare repos |
 | `CROSS_REPO_BASE` | Yes | Directory for cross-repo task symlinks |
 | `CROSS_REPO_ARCHIVE` | Yes | Directory where archived tasks are moved by `wt-multi-rm` |
+| `WORKTREE_MIRROR_BASE` | No | Directory containing pre-populated bare repo mirrors (for fast setup) |
 | `WT_DEFAULT_BRANCH_OVERRIDES` | No | Associative array of repo→branch overrides (usually not needed) |
 
 ### Default Branch Detection
@@ -309,6 +312,67 @@ declare -A WT_DEFAULT_BRANCH_OVERRIDES=(
     [old-service]=develop
 )
 export WT_DEFAULT_BRANCH_OVERRIDES
+```
+
+### Mirror-Based Setup (CI/CD Pods, Remote Agents)
+
+When `WORKTREE_MIRROR_BASE` is set, repos can be bootstrapped from pre-populated bare repo mirrors instead of cloning over the network. This is designed for environments like CI/CD pods or remote coding agent sessions where a read-only volume of git mirrors is mounted.
+
+**How it works:**
+- Mirrors are linked via git alternates (`git clone --bare --shared`) — objects are read directly from the mirror, not copied
+- New objects (commits, trees) are written locally; the mirror is never modified
+- A `git fetch origin` syncs remote tracking refs (fast since objects are read via alternates)
+- All existing `wt-*` and `wt-multi-*` commands auto-detect mirrors — if a repo doesn't exist yet and a mirror is available, it's set up transparently
+
+**Mirror directory layout:**
+
+```
+$WORKTREE_MIRROR_BASE/
+├── repo-a.git/          # bare repo (git clone --mirror)
+├── repo-b/              # bare repo (without .git suffix)
+└── repo-c/
+    └── .bare/           # wt-utils layout
+```
+
+**Usage:**
+
+```bash
+export WORKTREE_MIRROR_BASE="/repos"  # read-only mount
+
+# Bulk setup — discovers and sets up all mirrors in parallel
+wt-mirror-setup
+
+# Or setup specific repos
+wt-mirror-setup repo-a repo-b
+
+# Clone by name (uses mirror, keeps mirror's origin)
+wt-clone repo-a
+
+# Clone by name with explicit origin override
+wt-clone repo-a git@github.com:org/repo-a.git
+
+# Regular URL clone is accelerated when a mirror matches the name
+wt-clone git@github.com:org/repo-a.git
+
+# wt-new and wt-multi-new auto-init from mirror if repo missing
+wt-multi-new auth-fix repo-a repo-b repo-c
+```
+
+**Pod init script example:**
+
+```bash
+#!/bin/bash
+export WORKTREE_BASE="/workspace/worktrees"
+export CROSS_REPO_BASE="/workspace/cross-repo-tasks"
+export CROSS_REPO_ARCHIVE="/workspace/cross-repo-tasks/wt-archive"
+export WORKTREE_MIRROR_BASE="/repos"  # read-only volume mount
+source /path/to/worktree.sh
+
+# Set up all repos from mirrors (parallel, fast)
+wt-mirror-setup
+
+# Ready to work
+wt-multi-new my-feature backend frontend api
 ```
 
 ## Notes

@@ -206,3 +206,24 @@ Register-ArgumentCompleter -CommandName 'Set-WorktreeTaskLocation', 'wt-multi-cd
 # Remove-WorktreeTask / wt-multi-rm: task only
 # ===========================
 Register-ArgumentCompleter -CommandName 'Remove-WorktreeTask', 'wt-multi-rm' -ParameterName 'Branch' -ScriptBlock (New-TaskCompleter)
+
+# ===========================
+# Initialize-WorktreeMirrors / wt-mirror-setup: mirror names
+# ===========================
+Register-ArgumentCompleter -CommandName 'Initialize-WorktreeMirrors', 'wt-mirror-setup' -ParameterName 'Repos' -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    $null = $commandName, $parameterName, $commandAst, $fakeBoundParameters
+    
+    if ($env:WORKTREE_MIRROR_BASE -and (Test-Path $env:WORKTREE_MIRROR_BASE)) {
+        $seen = @{}
+        Get-ChildItem $env:WORKTREE_MIRROR_BASE -Directory | ForEach-Object {
+            $n = $_.Name -replace '\.git$', ''
+            if (-not $seen.ContainsKey($n)) {
+                $seen[$n] = $true
+                $n
+            }
+        } | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+    }
+}

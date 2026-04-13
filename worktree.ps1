@@ -108,6 +108,54 @@ function script:ConvertFrom-WorktreeDir {
     return $DirName -replace '__', '/'
 }
 
+function script:Find-WorktreeMirror {
+    param([string]$Name)
+    
+    if (-not $env:WORKTREE_MIRROR_BASE) { return $null }
+    
+    foreach ($candidate in @(
+        (Join-Path $env:WORKTREE_MIRROR_BASE "$Name.git"),
+        (Join-Path $env:WORKTREE_MIRROR_BASE $Name),
+        (Join-Path $env:WORKTREE_MIRROR_BASE $Name '.bare')
+    )) {
+        if (Test-Path (Join-Path $candidate 'objects') -PathType Container) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function script:Confirm-WorktreeRepo {
+    param(
+        [string]$Repo,
+        [string]$Context
+    )
+    
+    $repoPath = Join-Path $env:WORKTREE_BASE $Repo
+    $barePath = Join-Path $repoPath '.bare'
+    
+    # Auto-setup from mirror if repo doesn't exist yet
+    if (-not (Test-Path $barePath -PathType Container)) {
+        $mirror = Find-WorktreeMirror $Repo
+        if ($mirror) {
+            Write-WtStatus "Auto-initializing $Repo from mirror..."
+            $prevLocation = Get-Location
+            try {
+                Copy-WorktreeFromRemote -Name $Repo
+            }
+            finally {
+                Set-Location $prevLocation
+            }
+        }
+    }
+    
+    if (-not (Test-Path $barePath -PathType Container)) {
+        Write-Error "Error: Repository '$Repo' is not initialized at $repoPath`nTo fix this, clone it first: wt-clone <git-url> $Repo`nOr create a new local repo: wt-init $Repo$(if ($Context) { "`nRetry $Context after the repo is available." })"
+        return $false
+    }
+    return $true
+}
+
 function script:Get-DefaultBranch {
     param([string]$Repo)
     
@@ -164,28 +212,47 @@ function Copy-WorktreeFromRemote {
     
     .DESCRIPTION
     Creates a bare repo clone with worktree support at WORKTREE_BASE.
+    When WORKTREE_MIRROR_BASE is set, mirrors are used automatically.
     
     .EXAMPLE
     Copy-WorktreeFromRemote -Url git@github.com:user/repo.git
     
     .EXAMPLE
     wt-clone git@github.com:user/repo.git my-custom-name
+    
+    .EXAMPLE
+    wt-clone my-repo  # from mirror
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory, Position = 0)]
+        [Parameter(Position = 0)]
         [string]$Url,
         
         [Parameter(Position = 1)]
         [string]$Name
     )
     
-    # Extract repo name from URL if not provided
-    if (-not $Name) {
-        # Normalize URL: remove trailing slashes and .git suffix
-        $normalizedUrl = $Url.TrimEnd('/') -replace '\.git$', ''
-        # Get last path segment as repo name
-        $Name = ($normalizedUrl -split '/')[-1]
+    # Detect whether first arg is a URL or a plain repo name
+    if ($Url -match '://|@.*:') {
+        # It's a URL
+        if (-not $Name) {
+            $normalizedUrl = $Url.TrimEnd('/') -replace '\.git$', ''
+            $Name = ($normalizedUrl -split '/')[-1]
+        }
+    }
+    else {
+        # First arg is a name, second (if any) is a URL override
+        $Name = $Url
+        $Url = if ($args.Count -gt 0) { $args[0] } else { '' }
+    }
+    
+    # Try to find a local mirror
+    $mirrorPath = if ($Name) { Find-WorktreeMirror $Name } else { $null }
+    
+    if (-not $Name -or (-not $Url -and -not $mirrorPath)) {
+        Write-WtStatus "Usage: wt-clone <git-url> [local-name]"
+        Write-WtStatus "       wt-clone <name> [origin-url]   (from mirror, requires WORKTREE_MIRROR_BASE)"
+        return
     }
     
     $repoPath = Join-Path $env:WORKTREE_BASE $Name
@@ -195,22 +262,32 @@ function Copy-WorktreeFromRemote {
         return
     }
     
-    Write-WtStatus "Cloning $Url into $repoPath..."
     New-Item -ItemType Directory -Path $repoPath -Force | Out-Null
     Push-Location $repoPath
     
     try {
-        # Clone as bare repo
-        git clone --bare $Url .bare
-        
-        # Create .git pointer
-        Set-Content -Path '.git' -Value 'gitdir: ./.bare'
-        
-        # Configure fetch to get all branches
-        git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-        
-        # Fetch all branches
-        git fetch origin
+        if ($mirrorPath) {
+            Write-WtStatus "Cloning $Name from mirror ($mirrorPath)..."
+            # --shared sets up alternates to read objects from the mirror (no copy)
+            git clone --bare --shared $mirrorPath .bare
+            Set-Content -Path '.git' -Value 'gitdir: ./.bare'
+            git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+            if ($Url) {
+                $null = git remote set-url origin $Url 2>$null
+                if ($LASTEXITCODE -ne 0) {
+                    git remote add origin $Url
+                }
+            }
+            # Fetch to sync remote tracking refs (fast — objects read via alternates)
+            git fetch origin
+        }
+        else {
+            Write-WtStatus "Cloning $Url into $repoPath..."
+            git clone --bare $Url .bare
+            Set-Content -Path '.git' -Value 'gitdir: ./.bare'
+            git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+            git fetch origin
+        }
         
         # Detect default branch
         $defaultBranch = git symbolic-ref refs/remotes/origin/HEAD 2>$null
@@ -313,14 +390,12 @@ function New-Worktree {
     )
     
     $repoPath = Join-Path $env:WORKTREE_BASE $Repo
+    
+    if (-not (Confirm-WorktreeRepo $Repo 'wt-new')) { return }
+    
     $defaultBranch = Get-DefaultBranch $Repo
     $branchDir = ConvertTo-WorktreeDir $Branch
     $defaultBranchDir = ConvertTo-WorktreeDir $defaultBranch
-    
-    if (-not (Test-Path (Join-Path $repoPath '.bare') -PathType Container)) {
-        Write-Error "Error: Repository '$Repo' not found at $repoPath"
-        return
-    }
     
     $worktreePath = Join-Path $repoPath $branchDir
     if (-not $PSCmdlet.ShouldProcess($worktreePath, "Create worktree for branch '$Branch'")) {
@@ -365,14 +440,12 @@ function Resume-Worktree {
     )
     
     $repoPath = Join-Path $env:WORKTREE_BASE $Repo
+    
+    if (-not (Confirm-WorktreeRepo $Repo 'wt-continue')) { return }
+    
     $branchDir = ConvertTo-WorktreeDir $Branch
     $defaultBranch = Get-DefaultBranch $Repo
     $defaultBranchDir = ConvertTo-WorktreeDir $defaultBranch
-    
-    if (-not (Test-Path (Join-Path $repoPath '.bare') -PathType Container)) {
-        Write-Error "Error: Repository '$Repo' not found at $repoPath"
-        return
-    }
     
     Push-Location $repoPath
     
@@ -687,7 +760,7 @@ function New-WorktreeTask {
         
         $worktreePath = Join-Path $env:WORKTREE_BASE $repo $branchDir
         
-        Push-Location (Join-Path $env:WORKTREE_BASE $repo)
+        $prevLocation = Get-Location
         try {
             New-Worktree $repo $Branch 2>$null
         }
@@ -697,12 +770,11 @@ function New-WorktreeTask {
             }
             else {
                 Write-WtStatus "  Failed to create worktree for $repo" -Level Warning
+                Set-Location $prevLocation
                 continue
             }
         }
-        finally {
-            Pop-Location
-        }
+        Set-Location $prevLocation
         
         $linkPath = Join-Path $taskDir $repo
         if (-not (Test-Path $linkPath)) {
@@ -906,6 +978,89 @@ function Set-WorktreeTaskLocation {
     Set-Location (Join-Path $env:CROSS_REPO_BASE $branchDir)
 }
 
+function Initialize-WorktreeMirrors {
+    <#
+    .SYNOPSIS
+    Bootstraps repos from mirrors in WORKTREE_MIRROR_BASE.
+    
+    .DESCRIPTION
+    Discovers mirrors and sets up worktree repos from them.
+    If no repo names are given, all mirrors are discovered automatically.
+    
+    .EXAMPLE
+    Initialize-WorktreeMirrors
+    
+    .EXAMPLE
+    wt-mirror-setup cloud frontend api
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments)]
+        [string[]]$Repos
+    )
+    
+    if (-not $env:WORKTREE_MIRROR_BASE) {
+        Write-Error 'WORKTREE_MIRROR_BASE must be set'
+        return
+    }
+    
+    if (-not (Test-Path $env:WORKTREE_MIRROR_BASE -PathType Container)) {
+        Write-Error "WORKTREE_MIRROR_BASE ($env:WORKTREE_MIRROR_BASE) does not exist"
+        return
+    }
+    
+    # Auto-discover mirrors if none specified
+    if (-not $Repos -or $Repos.Count -eq 0) {
+        $seen = @{}
+        $Repos = @()
+        Get-ChildItem $env:WORKTREE_MIRROR_BASE -Directory | ForEach-Object {
+            $n = $_.Name -replace '\.git$', ''
+            if (-not $seen.ContainsKey($n) -and (Find-WorktreeMirror $n)) {
+                $seen[$n] = $true
+                $Repos += $n
+            }
+        }
+    }
+    
+    if ($Repos.Count -eq 0) {
+        Write-WtStatus "No mirrors found in $env:WORKTREE_MIRROR_BASE"
+        return
+    }
+    
+    Write-WtStatus "Setting up $($Repos.Count) repo(s) from mirrors..."
+    Write-WtStatus ''
+    
+    $failed = 0
+    foreach ($name in $Repos) {
+        $repoPath = Join-Path $env:WORKTREE_BASE $name
+        if (Test-Path $repoPath) {
+            Write-WtStatus "  ⊘ $name (already exists, skipping)"
+            continue
+        }
+        
+        $prevLocation = Get-Location
+        try {
+            Copy-WorktreeFromRemote -Name $name *>$null
+            Write-WtStatus "  ✓ $name" -Level Success
+        }
+        catch {
+            Write-WtStatus "  ✗ $name" -Level Error
+            $failed++
+        }
+        finally {
+            Set-Location $prevLocation
+        }
+    }
+    
+    Write-WtStatus ''
+    if ($failed -eq 0) {
+        Write-WtStatus '✓ All repos set up from mirrors' -Level Success
+    }
+    else {
+        Write-WtStatus "⚠ $failed repo(s) failed" -Level Warning
+    }
+}
+
 # ===========================
 # Aliases for CLI compatibility
 # ===========================
@@ -925,6 +1080,7 @@ Set-Alias -Name wt-multi-add -Value Add-WorktreeTaskRepo
 Set-Alias -Name wt-multi-rm  -Value Remove-WorktreeTask
 Set-Alias -Name wt-multi-ls  -Value Get-WorktreeTask
 Set-Alias -Name wt-multi-cd  -Value Set-WorktreeTaskLocation
+Set-Alias -Name wt-mirror-setup -Value Initialize-WorktreeMirrors
 
 # Note: Functions and aliases are automatically available when dot-sourced.
 # No Export-ModuleMember needed (only works in .psm1 module files).

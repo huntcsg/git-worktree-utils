@@ -98,3 +98,17 @@ complete -c wt-multi-rm -n "test (count (commandline -opc)) -eq 1" -a "(__wt_tas
 
 # wt-multi-ls: no args
 complete -c wt-multi-ls -f
+
+# Helper: list available mirrors
+function __wt_mirrors
+    if set -q WORKTREE_MIRROR_BASE; and test -d "$WORKTREE_MIRROR_BASE"
+        for entry in $WORKTREE_MIRROR_BASE/*
+            test -d "$entry"; or continue
+            basename "$entry" .git
+        end | sort -u
+    end
+end
+
+# wt-mirror-setup: mirror names
+complete -c wt-mirror-setup -f
+complete -c wt-mirror-setup -a "(__wt_mirrors)"

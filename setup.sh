@@ -169,6 +169,13 @@ else
             ;;
     esac
 
+    # Ask about mirror base (for pre-populated bare repos)
+    echo ""
+    echo "Mirror base directory (for pre-populated bare repo mirrors, e.g., in CI/CD pods)."
+    echo "Leave blank if not using mirrors."
+    read -r -p "Mirror base directory []: " WORKTREE_MIRROR_BASE
+    WORKTREE_MIRROR_BASE="${WORKTREE_MIRROR_BASE/#\~/$HOME}"
+
     # Ask about default branch overrides
     echo ""
     echo "Some repos may use a non-standard default branch (e.g., 'master' instead of 'main')."
@@ -227,6 +234,10 @@ set -gx WORKTREE_BASE \"$WORKTREE_BASE\"
 set -gx CROSS_REPO_BASE \"$CROSS_REPO_BASE\"
 set -gx CROSS_REPO_ARCHIVE \"$CROSS_REPO_ARCHIVE\"
 "
+    if [[ -n "$WORKTREE_MIRROR_BASE" ]]; then
+        CONFIG+="set -gx WORKTREE_MIRROR_BASE \"$WORKTREE_MIRROR_BASE\"
+"
+    fi
 
     # Add overrides if any (fish uses individual variables)
     if [[ -n "$OVERRIDES" ]]; then
@@ -253,6 +264,10 @@ export WORKTREE_BASE=\"$WORKTREE_BASE\"
 export CROSS_REPO_BASE=\"$CROSS_REPO_BASE\"
 export CROSS_REPO_ARCHIVE=\"$CROSS_REPO_ARCHIVE\"
 "
+    if [[ -n "$WORKTREE_MIRROR_BASE" ]]; then
+        CONFIG+="export WORKTREE_MIRROR_BASE=\"$WORKTREE_MIRROR_BASE\"
+"
+    fi
 
     # Add overrides if any
     if [[ -n "$OVERRIDES" ]]; then
