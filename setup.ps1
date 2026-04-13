@@ -146,6 +146,13 @@ else {
         default { $CrossRepoArchive = Join-Path $CrossRepoBase 'wt-archive' }
     }
     
+    # Ask about mirror base
+    Write-Host ''
+    Write-Host 'Mirror base directory (for pre-populated bare repo mirrors, e.g., in CI/CD pods).'
+    Write-Host 'Leave blank if not using mirrors.'
+    $WorktreeMirrorBase = Read-Host 'Mirror base directory []'
+    $WorktreeMirrorBase = $WorktreeMirrorBase -replace '^~', $HOME
+
     # Ask about default branch overrides
     Write-Host ''
     Write-Host "Some repos may use a non-standard default branch (e.g., 'master' instead of 'main')."
@@ -205,6 +212,9 @@ $configLines += "# Installed: $(Get-Date -Format 'o')"
 $configLines += "`$env:WORKTREE_BASE = `"$WorktreeBase`""
 $configLines += "`$env:CROSS_REPO_BASE = `"$CrossRepoBase`""
 $configLines += "`$env:CROSS_REPO_ARCHIVE = `"$CrossRepoArchive`""
+if ($WorktreeMirrorBase) {
+    $configLines += "`$env:WORKTREE_MIRROR_BASE = `"$WorktreeMirrorBase`""
+}
 
 # Add overrides if any
 if ($Overrides.Count -gt 0) {

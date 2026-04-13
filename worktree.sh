@@ -31,7 +31,7 @@ _wt_default_branch() {
     local repo_path="$WORKTREE_BASE/$repo"
     
     # Check for manual override first
-    if [[ -n "${WT_DEFAULT_BRANCH_OVERRIDES[$repo]:-}" ]]; then
+    if declare -p WT_DEFAULT_BRANCH_OVERRIDES &>/dev/null && [[ -n "${WT_DEFAULT_BRANCH_OVERRIDES[$repo]:-}" ]]; then
         echo "${WT_DEFAULT_BRANCH_OVERRIDES[$repo]}"
         return
     fi
@@ -50,22 +50,60 @@ _wt_default_branch() {
     echo "main"
 }
 
-# Clone a remote repo into the worktree structure
-# Usage: wt-clone <git-url> [local-name]
-wt-clone() {
-    local url="$1"
-    local name="$2"
+# Find a mirror for a repo name in WORKTREE_MIRROR_BASE
+# Checks common bare repo layouts; prints path on success
+_wt_find_mirror() {
+    local name="$1"
+    [[ -n "${WORKTREE_MIRROR_BASE:-}" ]] || return 1
 
-    if [[ -z "$url" ]]; then
-        echo "Usage: wt-clone <git-url> [local-name]"
-        echo "Example: wt-clone git@github.com:user/repo.git"
-        echo "Example: wt-clone git@github.com:user/repo.git my-repo"
-        return 1
+    local candidate
+    for candidate in \
+        "$WORKTREE_MIRROR_BASE/$name.git" \
+        "$WORKTREE_MIRROR_BASE/$name" \
+        "$WORKTREE_MIRROR_BASE/$name/.bare"; do
+        if [[ -d "$candidate/objects" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Clone a repo into the worktree structure
+# Usage: wt-clone <git-url> [local-name]
+#        wt-clone <name> [origin-url]   (from mirror, requires WORKTREE_MIRROR_BASE)
+#
+# When WORKTREE_MIRROR_BASE is set, mirrors are used automatically:
+#   - Cloning by URL: if a mirror matches the repo name, it is copied locally
+#     instead of downloading over the network.
+#   - Cloning by name: the mirror is copied and its existing origin is kept
+#     (or overridden by the optional second argument).
+wt-clone() {
+    local url=""
+    local name=""
+
+    # Detect whether the first arg is a URL or a plain repo name
+    if [[ "$1" == *"://"* || "$1" == *"@"*":"* ]]; then
+        url="$1"
+        name="${2:-$(basename "$url" .git)}"
+    else
+        name="$1"
+        url="${2:-}"
     fi
 
-    # Extract repo name from URL if not provided
-    if [[ -z "$name" ]]; then
-        name=$(basename "$url" .git)
+    # Try to find a local mirror
+    local mirror_path=""
+    if [[ -n "$name" ]]; then
+        mirror_path=$(_wt_find_mirror "$name" 2>/dev/null) || true
+    fi
+
+    if [[ -z "$name" ]] || { [[ -z "$url" ]] && [[ -z "$mirror_path" ]]; }; then
+        echo "Usage: wt-clone <git-url> [local-name]"
+        echo "       wt-clone <name> [origin-url]   (from mirror, requires WORKTREE_MIRROR_BASE)"
+        echo "Example: wt-clone git@github.com:user/repo.git"
+        echo "Example: wt-clone git@github.com:user/repo.git my-repo"
+        [[ -n "${WORKTREE_MIRROR_BASE:-}" ]] && echo "Example: wt-clone my-repo              (from mirror)"
+        return 1
     fi
 
     local repo_path="$WORKTREE_BASE/$name"
@@ -75,27 +113,32 @@ wt-clone() {
         return 1
     fi
 
-    echo "Cloning $url into $repo_path..."
     mkdir -p "$repo_path"
     cd "$repo_path" || return 1
 
-    # Clone as bare repo
-    git clone --bare "$url" .bare
-
-    # Create .git pointer
-    echo "gitdir: ./.bare" > .git
-
-    # Configure fetch to get all branches
-    git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-
-    # Fetch all branches
-    git fetch origin
+    if [[ -n "$mirror_path" ]]; then
+        echo "Cloning $name from mirror ($mirror_path)..."
+        # --shared sets up alternates to read objects from the mirror (no copy)
+        git clone --bare --shared "$mirror_path" .bare
+        echo "gitdir: ./.bare" > .git
+        git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+        if [[ -n "$url" ]]; then
+            git remote set-url origin "$url" 2>/dev/null || git remote add origin "$url"
+        fi
+        # Fetch to sync remote tracking refs (fast — objects read via alternates)
+        git fetch origin
+    else
+        echo "Cloning $url into $repo_path..."
+        git clone --bare "$url" .bare
+        echo "gitdir: ./.bare" > .git
+        git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+        git fetch origin
+    fi
 
     # Detect default branch
     local default_branch
     default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
     if [[ -z "$default_branch" ]]; then
-        # Try to detect from remote
         default_branch=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')
     fi
     if [[ -z "$default_branch" ]]; then
@@ -110,6 +153,81 @@ wt-clone() {
     echo "✓ Cloned $name (default branch: $default_branch)"
     echo "  Repo path: $repo_path"
     echo "  Worktree:  $repo_path/$default_branch"
+}
+
+# Bootstrap repos from mirrors in parallel
+# Usage: wt-mirror-setup [repo1] [repo2] ...
+#        wt-mirror-setup               (discover all mirrors)
+wt-mirror-setup() {
+    if [[ -z "${WORKTREE_MIRROR_BASE:-}" ]]; then
+        echo "Error: WORKTREE_MIRROR_BASE must be set"
+        return 1
+    fi
+
+    if [[ ! -d "$WORKTREE_MIRROR_BASE" ]]; then
+        echo "Error: WORKTREE_MIRROR_BASE ($WORKTREE_MIRROR_BASE) does not exist"
+        return 1
+    fi
+
+    local repos=("$@")
+
+    # Auto-discover mirrors if none specified
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        local entry seen=""
+        for entry in "$WORKTREE_MIRROR_BASE"/*; do
+            [[ -d "$entry" ]] || continue
+            local n
+            n=$(basename "$entry" .git)
+            # Deduplicate (e.g., repo and repo.git both exist)
+            if [[ " $seen " != *" $n "* ]] && _wt_find_mirror "$n" &>/dev/null; then
+                seen="$seen $n"
+                repos+=("$n")
+            fi
+        done
+    fi
+
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        echo "No mirrors found in $WORKTREE_MIRROR_BASE"
+        return 1
+    fi
+
+    echo "Setting up ${#repos[@]} repo(s) from mirrors..."
+    echo ""
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local pids=()
+    local names=()
+
+    for name in "${repos[@]}"; do
+        if [[ -d "$WORKTREE_BASE/$name" ]]; then
+            echo "  ⊘ $name (already exists, skipping)"
+            continue
+        fi
+        ( wt-clone "$name" > "$tmpdir/$name.log" 2>&1 ) &
+        pids+=($!)
+        names+=("$name")
+    done
+
+    local failed=0
+    for i in "${!pids[@]}"; do
+        if wait "${pids[$i]}"; then
+            echo "  ✓ ${names[$i]}"
+        else
+            echo "  ✗ ${names[$i]}"
+            sed 's/^/    /' "$tmpdir/${names[$i]}.log"
+            ((failed++))
+        fi
+    done
+
+    rm -rf "$tmpdir"
+    echo ""
+    if [[ $failed -eq 0 ]]; then
+        echo "✓ All repos set up from mirrors"
+    else
+        echo "⚠ $failed repo(s) failed"
+        return 1
+    fi
 }
 
 # Initialize a new local repo in the worktree structure
@@ -175,6 +293,12 @@ _wt_require_repo() {
     local repo="$1"
     local context="$2"
     local repo_path="$WORKTREE_BASE/$repo"
+
+    # Auto-setup from mirror if repo doesn't exist yet
+    if [[ ! -d "$repo_path/.bare" ]] && _wt_find_mirror "$repo" &>/dev/null; then
+        echo "Auto-initializing $repo from mirror..."
+        ( wt-clone "$repo" ) || return 1
+    fi
 
     if [[ ! -d "$repo_path/.bare" ]]; then
         echo "Error: Repository '$repo' is not initialized at $repo_path"
@@ -488,8 +612,8 @@ wt-multi-new() {
     for repo in "${repos[@]}"; do
         echo "Creating worktree for $repo..."
 
-        # Create the worktree
-        (cd "$WORKTREE_BASE/$repo" && wt-new "$repo" "$branch" >/dev/null 2>&1) || {
+        # Create the worktree (subshell to isolate cd side-effects)
+        ( wt-new "$repo" "$branch" >/dev/null 2>&1 ) || {
             # If it already exists, that's fine
             if [[ -d "$WORKTREE_BASE/$repo/$branch_dir" ]]; then
                 echo "  Worktree already exists"
@@ -504,10 +628,52 @@ wt-multi-new() {
         echo "  ✓ $repo"
     done
 
+    # Create AGENTS.md and CLAUDE.md to help AI agents stay oriented
+    _wt_write_agent_files "$task_dir" "$branch" "${repos[@]}"
+
     echo ""
     echo "Task directory: $task_dir"
     ls -la "$task_dir"
     cd "$task_dir" || return 1
+}
+
+# Write AGENTS.md and CLAUDE.md files for a cross-repo task directory
+_wt_write_agent_files() {
+    local task_dir="$1"
+    local branch="$2"
+    shift 2
+    local repos=("$@")
+
+    # If no repos passed, gather from existing symlinks
+    if [[ ${#repos[@]} -eq 0 ]]; then
+        repos=()
+        for link in "$task_dir"/*; do
+            if [[ -L "$link" ]]; then
+                repos+=("$(basename "$link")")
+            fi
+        done
+    fi
+
+    local repo_list=""
+    for repo in "${repos[@]}"; do
+        repo_list="${repo_list}- ${repo}
+"
+    done
+
+    local content="# Cross-Repo Task: ${branch}
+
+This is a cross-repo task directory. Each subdirectory is a symlinked repository worktree.
+
+**Important:** Always use this directory (${task_dir}) as your workspace root.
+Do NOT navigate to or use the resolved symlink target paths under ~/worktree.
+Stay in this directory when running commands.
+
+## Repositories
+
+${repo_list}"
+
+    echo "$content" > "$task_dir/AGENTS.md"
+    echo "$content" > "$task_dir/CLAUDE.md"
 }
 
 # Add repos to an existing cross-repo task
@@ -569,6 +735,9 @@ wt-multi-add() {
         ln -sf "$WORKTREE_BASE/$repo/$branch_dir" "$task_dir/$repo"
         echo "  ✓ $repo"
     done
+
+    # Update AGENTS.md and CLAUDE.md with new repo list
+    _wt_write_agent_files "$task_dir" "$branch"
 
     echo ""
     echo "Task directory: $task_dir"

@@ -171,6 +171,23 @@ _wt_multi_add_complete() {
     esac
 }
 
+# List available mirrors from WORKTREE_MIRROR_BASE
+_wt_list_mirrors() {
+    [[ -n "${WORKTREE_MIRROR_BASE:-}" && -d "$WORKTREE_MIRROR_BASE" ]] || return
+    local entry
+    for entry in "$WORKTREE_MIRROR_BASE"/*; do
+        [[ -d "$entry" ]] || continue
+        basename "$entry" .git
+    done | sort -u
+}
+
+# Completion for wt-mirror-setup: mirror names
+_wt_mirror_complete() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    # shellcheck disable=SC2207
+    COMPREPLY=($(compgen -W "$(_wt_list_mirrors)" -- "$cur"))
+}
+
 # Register completions
 complete -F _wt_cd_complete wt-cd
 complete -F _wt_new_complete wt-new
@@ -182,3 +199,4 @@ complete -F _wt_multi_complete wt-multi-new
 complete -F _wt_multi_add_complete wt-multi-add
 complete -F _wt_task_complete wt-multi-cd
 complete -F _wt_task_complete wt-multi-rm
+complete -F _wt_mirror_complete wt-mirror-setup

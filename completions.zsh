@@ -108,6 +108,24 @@ _wt-multi-add() {
     esac
 }
 
+# List available mirrors
+_wt_mirrors() {
+    if [[ -n "${WORKTREE_MIRROR_BASE:-}" && -d "$WORKTREE_MIRROR_BASE" ]]; then
+        local mirrors=()
+        local entry
+        for entry in "$WORKTREE_MIRROR_BASE"/*; do
+            [[ -d "$entry" ]] || continue
+            mirrors+=($(basename "$entry" .git))
+        done
+        _describe 'mirror' mirrors
+    fi
+}
+
+# Completion for wt-mirror-setup
+_wt-mirror-setup() {
+    _wt_mirrors
+}
+
 # Register completions
 compdef _wt-cd wt-cd
 compdef _wt-new wt-new
@@ -119,3 +137,4 @@ compdef _wt-multi-new wt-multi-new
 compdef _wt-multi-add wt-multi-add
 compdef _wt_tasks wt-multi-cd
 compdef _wt_tasks wt-multi-rm
+compdef _wt-mirror-setup wt-mirror-setup
