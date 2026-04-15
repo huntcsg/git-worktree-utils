@@ -395,7 +395,6 @@ function New-Worktree {
     
     $defaultBranch = Get-DefaultBranch $Repo
     $branchDir = ConvertTo-WorktreeDir $Branch
-    $defaultBranchDir = ConvertTo-WorktreeDir $defaultBranch
     
     $worktreePath = Join-Path $repoPath $branchDir
     if (-not $PSCmdlet.ShouldProcess($worktreePath, "Create worktree for branch '$Branch'")) {
@@ -405,10 +404,10 @@ function New-Worktree {
     Push-Location $repoPath
     
     try {
-        $defaultWorktree = Join-Path $repoPath $defaultBranchDir
-        git -C $defaultWorktree fetch origin
-        git -C $defaultWorktree reset --hard "origin/$defaultBranch"
-        git worktree add $branchDir -b $Branch $defaultBranch
+        # Fetch latest and branch directly off origin — avoids touching the
+        # default-branch worktree (which may be detached or have local changes)
+        git fetch origin $defaultBranch
+        git worktree add $branchDir -b $Branch "origin/$defaultBranch"
         
         Set-Location $branchDir
         Write-WtStatus "Created worktree: $repoPath\$branchDir (branch: $Branch)"
