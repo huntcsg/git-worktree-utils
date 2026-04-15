@@ -304,16 +304,15 @@ function wt-new
     end
 
     set -l default_branch (_wt_default_branch "$repo")
-    set -l default_branch_dir (_wt_branch_to_dir "$default_branch")
 
     cd "$repo_path"
 
-    # Update default branch first
-    git -C "$default_branch_dir" fetch origin
-    and git -C "$default_branch_dir" reset --hard origin/$default_branch
+    # Fetch latest and branch directly off origin — avoids touching the
+    # default-branch worktree (which may be detached or have local changes)
+    git fetch origin "$default_branch"
 
-    # Create worktree from default branch
-    git worktree add "$branch_dir" -b "$branch" $default_branch
+    # Create worktree from origin's default branch
+    git worktree add "$branch_dir" -b "$branch" "origin/$default_branch"
 
     cd "$branch_dir"
     echo "Created worktree: $repo_path/$branch_dir (branch: $branch)"
