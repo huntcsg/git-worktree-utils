@@ -208,9 +208,9 @@ Register-ArgumentCompleter -CommandName 'Set-WorktreeTaskLocation', 'wt-multi-cd
 Register-ArgumentCompleter -CommandName 'Remove-WorktreeTask', 'wt-multi-rm' -ParameterName 'Branch' -ScriptBlock (New-TaskCompleter)
 
 # ===========================
-# Initialize-WorktreeMirrors / wt-mirror-setup: mirror names
+# Initialize-WorktreeMirror / wt-mirror-setup: mirror names
 # ===========================
-Register-ArgumentCompleter -CommandName 'Initialize-WorktreeMirrors', 'wt-mirror-setup' -ParameterName 'Repos' -ScriptBlock {
+Register-ArgumentCompleter -CommandName 'Initialize-WorktreeMirror', 'Initialize-WorktreeMirrors', 'wt-mirror-setup' -ParameterName 'Repos' -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
     $null = $commandName, $parameterName, $commandAst, $fakeBoundParameters
     
