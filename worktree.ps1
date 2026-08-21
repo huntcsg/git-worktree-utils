@@ -977,7 +977,7 @@ function Set-WorktreeTaskLocation {
     Set-Location (Join-Path $env:CROSS_REPO_BASE $branchDir)
 }
 
-function Initialize-WorktreeMirrors {
+function Initialize-WorktreeMirror {
     <#
     .SYNOPSIS
     Bootstraps repos from mirrors in WORKTREE_MIRROR_BASE.
@@ -987,7 +987,7 @@ function Initialize-WorktreeMirrors {
     If no repo names are given, all mirrors are discovered automatically.
     
     .EXAMPLE
-    Initialize-WorktreeMirrors
+    Initialize-WorktreeMirror
     
     .EXAMPLE
     wt-mirror-setup cloud frontend api
@@ -1079,7 +1079,9 @@ Set-Alias -Name wt-multi-add -Value Add-WorktreeTaskRepo
 Set-Alias -Name wt-multi-rm  -Value Remove-WorktreeTask
 Set-Alias -Name wt-multi-ls  -Value Get-WorktreeTask
 Set-Alias -Name wt-multi-cd  -Value Set-WorktreeTaskLocation
-Set-Alias -Name wt-mirror-setup -Value Initialize-WorktreeMirrors
+Set-Alias -Name wt-mirror-setup -Value Initialize-WorktreeMirror
+# Backwards compatibility for the previous plural name.
+Set-Alias -Name Initialize-WorktreeMirrors -Value Initialize-WorktreeMirror
 
 # Note: Functions and aliases are automatically available when dot-sourced.
 # No Export-ModuleMember needed (only works in .psm1 module files).
